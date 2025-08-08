@@ -1,0 +1,11 @@
+
+
+producer 发送端报错，实际也能发成功，且服务端能接收到
+
+>[2025-08-08 16:05:33,781] WARN [Producer clientId=console-producer] Got error produce response with correlation id 10 on topic-partition quickstart-events-0, retrying (2 attempts left). Error: REQUEST_TIMED_OUT (org.apache.kafka.clients.producer.internals.Sender)
+[2025-08-08 16:05:34,009] WARN [Producer clientId=console-producer] Got error produce response with correlation id 11 on topic-partition quickstart-events-0, retrying (1 attempts left). Error: REQUEST_TIMED_OUT. Error Message: Disconnected from node 1 due to timeout (org.apache.kafka.clients.producer.internals.Sender)
+[2025-08-08 16:05:34,010] WARN [Producer clientId=console-producer] Got error produce response with correlation id 12 on topic-partition quickstart-events-0, retrying (2 attempts left). Error: REQUEST_TIMED_OUT. Error Message: Disconnected from node 1 due to timeout (org.apache.kafka.clients.producer.internals.Sender)
+[2025-08-08 16:05:35,759] WARN [Producer clientId=console-producer] Got error produce response with correlation id 15 on topic-partition quickstart-events-0, retrying (0 attempts left). Error: REQUEST_TIMED_OUT. Error Message: Disconnected from node 1 due to timeout (org.apache.kafka.clients.producer.internals.Sender)
+[2025-08-08 16:05:37,751] ERROR Error when sending message to topic quickstart-events with key: null, value: 1 bytes with error: (org.apache.kafka.clients.producer.internals.ErrorLoggingCallback)
+org.apache.kafka.common.errors.TimeoutException: Disconnected from node 1 due to timeout
+[2025-08-08 16:05:37,754] ERROR Error when sending message to topic quickstart-events with key: null, value: 1 bytes with error: (org.apache.kafka.clients.producer.internals.ErrorLoggingCallback)
