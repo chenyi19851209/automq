@@ -31,6 +31,7 @@ import com.automq.stream.s3.wal.impl.object.ObjectWALService;
 import com.automq.stream.utils.IdURI;
 import com.automq.stream.utils.Time;
 
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
@@ -49,13 +50,14 @@ public class DefaultWalFactory implements WalFactory {
     }
 
     @Override
-    public WriteAheadLog build(IdURI uri, BuildOptions options) {
+    public WriteAheadLog build(List<BucketURI> buckets,IdURI uri, BuildOptions options) {
         //noinspection SwitchStatementWithTooFewBranches
         switch (uri.protocol().toUpperCase(Locale.ENGLISH)) {
             case "S3":
-                BucketURI bucketURI = to(uri);
+//                BucketURI bucketURI = to(uri);
                 ObjectStorage walObjectStorage = ObjectStorageFactory.instance()
-                    .builder(bucketURI)
+                    //wal存储的地方使用多buckets多份写入
+                    .builder(buckets)
                     .tagging(objectTagging)
                     .inboundLimiter(networkInboundLimiter)
                     .outboundLimiter(networkOutboundLimiter)

@@ -255,12 +255,20 @@ public class S3MetricsExporter implements MetricExporter {
     public CompletableResultCode flush() {
         synchronized (uploadBuffer) {
             if (uploadBuffer.readableBytes() > 0) {
+                ByteBuf compressedData = null;
                 try {
-                    objectStorage.write(WriteOptions.DEFAULT, getObjectKey(), Utils.compress(uploadBuffer.slice().asReadOnly())).get();
+                    // 创建压缩数据的副本，避免在异步操作中释放原始 buffer
+                    ByteBuf slice = uploadBuffer.slice().asReadOnly();
+                    compressedData = Utils.compress(slice);
+                    objectStorage.write(WriteOptions.DEFAULT, getObjectKey(), compressedData).get();
                 } catch (Exception e) {
                     LOGGER.error("Failed to upload metrics to s3", e);
                     return CompletableResultCode.ofFailure();
                 } finally {
+                    // 确保压缩数据被释放
+                    if (compressedData != null && compressedData.refCnt() > 0) {
+                        compressedData.release();
+                    }
                     lastUploadTimestamp = System.currentTimeMillis();
                     nextUploadInterval = UPLOAD_INTERVAL + random.nextInt(MAX_JITTER_INTERVAL);
                     uploadBuffer.clear();

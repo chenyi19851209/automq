@@ -19,11 +19,14 @@
 
 package com.automq.stream.s3.wal;
 
+import com.automq.stream.s3.operator.BucketURI;
 import com.automq.stream.utils.IdURI;
+
+import java.util.List;
 
 public interface WalFactory {
 
-    WriteAheadLog build(IdURI uri, BuildOptions options);
+    WriteAheadLog build(List<BucketURI> buckets,IdURI uri, BuildOptions options);
 
 
     class BuildOptions {

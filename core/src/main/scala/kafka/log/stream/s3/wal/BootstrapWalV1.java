@@ -19,6 +19,7 @@
 
 package kafka.log.stream.s3.wal;
 
+import com.automq.stream.s3.operator.BucketURI;
 import kafka.log.stream.s3.node.NodeManager;
 
 import org.apache.kafka.common.utils.ThreadUtils;
@@ -44,6 +45,8 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -163,19 +166,24 @@ public class BootstrapWalV1 implements WriteAheadLog {
 
     private CompletableFuture<? extends WriteAheadLog> buildRecoverWal(String kraftWalConfigs, long oldNodeEpoch) {
         IdURI uri = IdURI.parse(kraftWalConfigs);
+        List<BucketURI> buckets = new LinkedList<>();
+        buckets.addAll(BucketURI.parseBuckets(kraftWalConfigs));
         CompletableFuture<Void> cf = walHandle
-            .acquirePermission(nodeId, oldNodeEpoch, uri, new WalHandle.AcquirePermissionOptions().failoverMode(failoverMode));
-        return cf.thenApplyAsync(nil -> factory.build(uri, BuildOptions.builder().nodeEpoch(oldNodeEpoch).failoverMode(failoverMode).build()), executor);
+            .acquirePermission(buckets,nodeId, oldNodeEpoch, uri, new WalHandle.AcquirePermissionOptions().failoverMode(failoverMode));
+        return cf.thenApplyAsync(nil -> factory.build(buckets,uri, BuildOptions.builder().nodeEpoch(oldNodeEpoch).failoverMode(failoverMode).build()), executor);
     }
 
     private CompletableFuture<? extends WriteAheadLog> buildWal(String kraftWalConfigs) {
         IdURI uri = IdURI.parse(kraftWalConfigs);
+        List<BucketURI> buckets = new LinkedList<>();
+        buckets.addAll(BucketURI.parseBuckets(kraftWalConfigs));
+
         WalHandle.AcquirePermissionOptions options = new WalHandle.AcquirePermissionOptions()
             .timeoutMs(Long.MAX_VALUE)
             .failoverMode(false);
         CompletableFuture<Void> cf = walHandle
-            .acquirePermission(nodeId, nodeEpoch, uri, options);
-        return cf.thenApplyAsync(nil -> factory.build(uri, BuildOptions.builder().nodeEpoch(nodeEpoch).failoverMode(false).build()), executor);
+            .acquirePermission(buckets,nodeId, nodeEpoch, uri, options);
+        return cf.thenApplyAsync(nil -> factory.build(buckets,uri, BuildOptions.builder().nodeEpoch(nodeEpoch).failoverMode(false).build()), executor);
     }
 
     private CompletableFuture<Void> releasePermission(String kraftWalConfigs) {

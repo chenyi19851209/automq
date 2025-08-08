@@ -45,12 +45,26 @@ public class QuorumAwsObjectStorage implements ObjectStorage {
     // 1. doWrite: 多份写，N份成功
     public CompletableFuture<Void> doWrite(WriteOptions options, String path, ByteBuf data) {
         AtomicInteger success = new AtomicInteger(0);
+        AtomicInteger completed = new AtomicInteger(0);
         CompletableFuture<Void> result = new CompletableFuture<>();
         for (AwsObjectStorage storage : storages) {
             ByteBuf copy = data.retainedDuplicate();
             storage.doWrite(options, path, copy).whenComplete((v, ex) -> {
-                if (ex == null && success.incrementAndGet() >= quorum) {
-                    result.complete(null);
+                try {
+                    if (ex == null && success.incrementAndGet() >= quorum) {
+                        result.complete(null);
+                    }
+                } finally {
+                    // 确保 ByteBuf 副本被释放
+                    if (copy != null && copy.refCnt() > 0) {
+                        copy.release();
+                    }
+                    // 当所有操作都完成时，释放原始 ByteBuf
+                    if (completed.incrementAndGet() == storages.size()) {
+                        if (data != null && data.refCnt() > 0) {
+                            data.release();
+                        }
+                    }
                 }
             });
         }
@@ -98,15 +112,29 @@ public class QuorumAwsObjectStorage implements ObjectStorage {
     // 4. doUploadPart: 多份写，N份成功，返回quorum份结果
     public CompletableFuture<List<AbstractObjectStorage.ObjectStorageCompletedPart>> doUploadPart(WriteOptions options, String path, List<String> uploadIds, int partNumber, ByteBuf part) {
         AtomicInteger success = new AtomicInteger(0);
+        AtomicInteger completed = new AtomicInteger(0);
         List<AbstractObjectStorage.ObjectStorageCompletedPart> parts = Collections.synchronizedList(new ArrayList<>());
         CompletableFuture<List<AbstractObjectStorage.ObjectStorageCompletedPart>> result = new CompletableFuture<>();
         for (int i = 0; i < storages.size(); i++) {
             ByteBuf copy = part.retainedDuplicate();
             storages.get(i).doUploadPart(options, path, uploadIds.get(i), partNumber, copy).whenComplete((p, ex) -> {
-                if (ex == null) {
-                    parts.add(p);
-                    if (success.incrementAndGet() >= quorum) {
-                        result.complete(new ArrayList<>(parts));
+                try {
+                    if (ex == null) {
+                        parts.add(p);
+                        if (success.incrementAndGet() >= quorum) {
+                            result.complete(new ArrayList<>(parts));
+                        }
+                    }
+                } finally {
+                    // 确保 ByteBuf 副本被释放
+                    if (copy != null && copy.refCnt() > 0) {
+                        copy.release();
+                    }
+                    // 当所有操作都完成时，释放原始 ByteBuf
+                    if (completed.incrementAndGet() == storages.size()) {
+                        if (part != null && part.refCnt() > 0) {
+                            part.release();
+                        }
                     }
                 }
             });
@@ -237,12 +265,27 @@ public class QuorumAwsObjectStorage implements ObjectStorage {
         @Override
         public CompletableFuture<Void> write(ByteBuf data) {
             AtomicInteger success = new AtomicInteger(0);
+            AtomicInteger completed = new AtomicInteger(0);
             CompletableFuture<Void> result = new CompletableFuture<>();
+
             for (Writer writer : writers) {
                 ByteBuf copy = data.retainedDuplicate();
                 writer.write(copy).whenComplete((v, ex) -> {
-                    if (ex == null && success.incrementAndGet() >= quorumCount) {
-                        result.complete(null);
+                    try {
+                        if (ex == null && success.incrementAndGet() >= quorumCount) {
+                            result.complete(null);
+                        }
+                    } finally {
+                        // 确保 ByteBuf 副本被释放
+                        if (copy != null && copy.refCnt() > 0) {
+                            copy.release();
+                        }
+                        // 当所有操作都完成时，释放原始 ByteBuf
+                        if (completed.incrementAndGet() == writers.size()) {
+                            if (data != null && data.refCnt() > 0) {
+                                data.release();
+                            }
+                        }
                     }
                 });
             }

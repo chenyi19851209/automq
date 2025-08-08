@@ -209,7 +209,7 @@ public class FileCache {
                 return Optional.empty();
             }
             lru.touchIfExist(new Key(cacheId, cacheStartPosition));
-            MappedByteBuffer cacheByteBuffer = this.cacheByteBuffer.duplicate();
+            MappedByteBuffer cacheByteBuffer = (MappedByteBuffer)this.cacheByteBuffer.duplicate();
             long nextPosition = position;
             int remaining = length;
             for (int i = 0; i < blocks.indexes.length; i++) {
@@ -219,7 +219,7 @@ public class FileCache {
                 }
                 long cacheBlockStartPosition = cacheBlockEndPosition - blockSize;
                 int readSize = (int) Math.min(remaining, cacheBlockEndPosition - nextPosition);
-                buf.writeBytes(cacheByteBuffer.slice(blocks.indexes[i] * blockSize + (int) (nextPosition - cacheBlockStartPosition), readSize));
+                buf.writeBytes((MappedByteBuffer)cacheByteBuffer.slice(blocks.indexes[i] * blockSize + (int) (nextPosition - cacheBlockStartPosition), readSize));
                 remaining -= readSize;
                 nextPosition += readSize;
                 if (remaining <= 0) {

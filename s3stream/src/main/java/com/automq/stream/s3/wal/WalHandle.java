@@ -19,8 +19,10 @@
 
 package com.automq.stream.s3.wal;
 
+import com.automq.stream.s3.operator.BucketURI;
 import com.automq.stream.utils.IdURI;
 
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -29,7 +31,7 @@ public interface WalHandle {
     /**
      * Fence the specified WAL on the specified node and acquire permission to access it.
      */
-    CompletableFuture<Void> acquirePermission(int nodeId, long nodeEpoch, IdURI walConfig, AcquirePermissionOptions options);
+    CompletableFuture<Void> acquirePermission(List<BucketURI> buckets, int nodeId, long nodeEpoch, IdURI walConfig, AcquirePermissionOptions options);
 
     /**
      * Release the permission to access the specified WAL.

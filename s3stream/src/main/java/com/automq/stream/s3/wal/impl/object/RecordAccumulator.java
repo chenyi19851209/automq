@@ -233,6 +233,14 @@ public class RecordAccumulator implements Closeable {
             lock.writeLock().unlock();
         }
 
+        // 清理 bufferQueue 中剩余的 ByteBuf
+        Record record;
+        while ((record = bufferQueue.poll()) != null) {
+            if (record.record != null && record.record.refCnt() > 0) {
+                record.record.release();
+            }
+        }
+
         // Wait for all upload tasks to complete.
         if (!pendingFutureMap.isEmpty()) {
             log.info("Wait for {} pending upload tasks to complete.", pendingFutureMap.size());
@@ -607,16 +615,32 @@ public class RecordAccumulator implements Closeable {
                 }
             })
             .whenComplete((v, throwable) -> {
-                bufferedDataBytes.addAndGet(-dataLength);
-                throwable = ExceptionUtils.getRootCause(throwable);
-                if (throwable instanceof WALFencedException) {
-                    List<Record> uploadedRecords = uploadMap.remove(firstOffset).records();
-                    Throwable finalThrowable = throwable;
-                    // Release lock and complete future in callback thread.
-                    callbackService.submit(() -> uploadedRecords.forEach(record -> record.future.completeExceptionally(finalThrowable)));
-                } else if (throwable != null) {
-                    // Never fail the write task, the under layer storage will retry forever.
-                    log.error("[Bug] Failed to write records to S3: {}", firstOffset, throwable);
+                try {
+                    bufferedDataBytes.addAndGet(-dataLength);
+                    throwable = ExceptionUtils.getRootCause(throwable);
+                    if (throwable instanceof WALFencedException) {
+                        List<Record> uploadedRecords = uploadMap.remove(firstOffset).records();
+                        Throwable finalThrowable = throwable;
+                        // Release lock and complete future in callback thread.
+                        callbackService.submit(() -> uploadedRecords.forEach(record -> record.future.completeExceptionally(finalThrowable)));
+                    } else if (throwable != null) {
+                        // Never fail the write task, the under layer storage will retry forever.
+                        log.error("[Bug] Failed to write records to S3: {}", firstOffset, throwable);
+                    }
+                } finally {
+                    // 确保 ByteBuf 被释放
+                    if (dataBuffer != null && dataBuffer.refCnt() > 0) {
+                        dataBuffer.release();
+                    }
+                    if (objectBuffer != null && objectBuffer.refCnt() > 0) {
+                        objectBuffer.release();
+                    }
+                    // 释放 Record 对象中的 ByteBuf
+                    for (Record record : recordList) {
+                        if (record.record != null && record.record.refCnt() > 0) {
+                            record.record.release();
+                        }
+                    }
                 }
             });
 

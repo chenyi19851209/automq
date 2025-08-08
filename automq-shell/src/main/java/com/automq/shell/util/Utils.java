@@ -32,17 +32,24 @@ import io.netty.buffer.ByteBuf;
 public class Utils {
 
     public static ByteBuf compress(ByteBuf input) throws IOException {
-        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
-        GZIPOutputStream gzipOutputStream = new GZIPOutputStream(byteArrayOutputStream);
+        try {
+            ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+            GZIPOutputStream gzipOutputStream = new GZIPOutputStream(byteArrayOutputStream);
 
-        byte[] buffer = new byte[input.readableBytes()];
-        input.readBytes(buffer);
-        gzipOutputStream.write(buffer);
-        gzipOutputStream.close();
+            byte[] buffer = new byte[input.readableBytes()];
+            input.readBytes(buffer);
+            gzipOutputStream.write(buffer);
+            gzipOutputStream.close();
 
-        ByteBuf compressed = ByteBufAlloc.byteBuffer(byteArrayOutputStream.size());
-        compressed.writeBytes(byteArrayOutputStream.toByteArray());
-        return compressed;
+            ByteBuf compressed = ByteBufAlloc.byteBuffer(byteArrayOutputStream.size());
+            compressed.writeBytes(byteArrayOutputStream.toByteArray());
+            return compressed;
+        } finally {
+            // 确保输入 ByteBuf 被释放
+            if (input != null && input.refCnt() > 0) {
+                input.release();
+            }
+        }
     }
 
     public static ByteBuf decompress(ByteBuf input) throws IOException {

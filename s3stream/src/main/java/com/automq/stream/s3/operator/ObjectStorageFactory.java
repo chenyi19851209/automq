@@ -73,6 +73,9 @@ public class ObjectStorageFactory {
         return new Builder().bucket(bucket);
     }
 
+    public Builder builder(List<BucketURI> buckets) {
+        return new Builder().buckets(buckets);
+    }
     public Builder builder() {
         return new Builder();
     }
@@ -212,8 +215,8 @@ public class ObjectStorageFactory {
                         .build());
                 }
                 // quorum数可通过extension或其它方式传入，这里默认多数
-                //int quorum = (int)Math.ceil(buckets.size() / 2.0);
-                objectStorage = new QuorumAwsObjectStorage(awsList, awsList.size());
+                int quorum = (int)Math.ceil(buckets.size() / 2.0);
+                objectStorage = new QuorumAwsObjectStorage(awsList, quorum);
             } else {
                 objectStorage = protocolHandlers.get(bucket.protocol()).apply(this);
             }

@@ -25,6 +25,7 @@ import com.automq.stream.s3.operator.ObjectStorageFactory;
 import com.automq.stream.s3.wal.impl.object.ObjectReservationService;
 import com.automq.stream.utils.IdURI;
 
+import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 
@@ -37,12 +38,12 @@ public class DefaultWalHandle implements WalHandle {
     }
 
     @Override
-    public CompletableFuture<Void> acquirePermission(int nodeId, long nodeEpoch, IdURI walConfig,
-        AcquirePermissionOptions options) {
+    public CompletableFuture<Void> acquirePermission(List<BucketURI> buckets, int nodeId, long nodeEpoch, IdURI walConfig,
+                                                     AcquirePermissionOptions options) {
         //noinspection SwitchStatementWithTooFewBranches
         switch (walConfig.protocol().toUpperCase(Locale.ENGLISH)) {
             case "S3": {
-                return acquireObjectWALPermission(nodeId, nodeEpoch, walConfig, options);
+                return acquireObjectWALPermission(buckets, nodeId, nodeEpoch, walConfig, options);
             }
             default: {
                 throw new IllegalArgumentException(String.format("Unsupported WAL protocol %s in %s", walConfig.protocol(), walConfig));
@@ -63,9 +64,9 @@ public class DefaultWalHandle implements WalHandle {
         }
     }
 
-    private CompletableFuture<Void> acquireObjectWALPermission(int nodeId, long nodeEpoch, IdURI walConfig,
+    private CompletableFuture<Void> acquireObjectWALPermission(List<BucketURI> buckets, int nodeId, long nodeEpoch, IdURI walConfig,
         AcquirePermissionOptions options) {
-        ObjectStorage objectStorage = ObjectStorageFactory.instance().builder(BucketURI.parse(walConfig)).build();
+        ObjectStorage objectStorage = ObjectStorageFactory.instance().builder(buckets).build();
         ObjectReservationService reservationService = new ObjectReservationService(clusterId, objectStorage, walConfig.id());
         return reservationService.acquire(nodeId, nodeEpoch, options.failoverMode());
     }
