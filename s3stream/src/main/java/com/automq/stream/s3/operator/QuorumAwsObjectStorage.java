@@ -91,89 +91,6 @@ public class QuorumAwsObjectStorage implements ObjectStorage {
         });
     }
 
-    // 3. doCreateMultipartUpload: 多份写，N份成功
-    public CompletableFuture<List<String>> doCreateMultipartUpload(WriteOptions options, String path) {
-        AtomicInteger success = new AtomicInteger(0);
-        List<String> uploadIds = Collections.synchronizedList(new ArrayList<>());
-        CompletableFuture<List<String>> result = new CompletableFuture<>();
-        for (AwsObjectStorage storage : storages) {
-            storage.doCreateMultipartUpload(options, path).whenComplete((uploadId, ex) -> {
-                if (ex == null) {
-                    uploadIds.add(uploadId);
-                    if (success.incrementAndGet() >= quorum) {
-                        result.complete(new ArrayList<>(uploadIds));
-                    }
-                }
-            });
-        }
-        return result;
-    }
-
-    // 4. doUploadPart: 多份写，N份成功，返回quorum份结果
-    public CompletableFuture<List<AbstractObjectStorage.ObjectStorageCompletedPart>> doUploadPart(WriteOptions options, String path, List<String> uploadIds, int partNumber, ByteBuf part) {
-        AtomicInteger success = new AtomicInteger(0);
-        AtomicInteger completed = new AtomicInteger(0);
-        List<AbstractObjectStorage.ObjectStorageCompletedPart> parts = Collections.synchronizedList(new ArrayList<>());
-        CompletableFuture<List<AbstractObjectStorage.ObjectStorageCompletedPart>> result = new CompletableFuture<>();
-        for (int i = 0; i < storages.size(); i++) {
-            ByteBuf copy = part.retainedDuplicate();
-            storages.get(i).doUploadPart(options, path, uploadIds.get(i), partNumber, copy).whenComplete((p, ex) -> {
-                try {
-                    if (ex == null) {
-                        parts.add(p);
-                        if (success.incrementAndGet() >= quorum) {
-                            result.complete(new ArrayList<>(parts));
-                        }
-                    }
-                } finally {
-                    // 确保 ByteBuf 副本被释放
-                    if (copy != null && copy.refCnt() > 0) {
-                        copy.release();
-                    }
-                    // 当所有操作都完成时，释放原始 ByteBuf
-                    if (completed.incrementAndGet() == storages.size()) {
-                        if (part != null && part.refCnt() > 0) {
-                            part.release();
-                        }
-                    }
-                }
-            });
-        }
-        return result;
-    }
-
-    // 5. doUploadPartCopy: 多份写，N份成功，返回quorum份结果
-    public CompletableFuture<List<AbstractObjectStorage.ObjectStorageCompletedPart>> doUploadPartCopy(WriteOptions options, String sourcePath, String path, long start, long end, List<String> uploadIds, int partNumber) {
-        AtomicInteger success = new AtomicInteger(0);
-        List<AbstractObjectStorage.ObjectStorageCompletedPart> parts = Collections.synchronizedList(new ArrayList<>());
-        CompletableFuture<List<AbstractObjectStorage.ObjectStorageCompletedPart>> result = new CompletableFuture<>();
-        for (int i = 0; i < storages.size(); i++) {
-            storages.get(i).doUploadPartCopy(options, sourcePath, path, start, end, uploadIds.get(i), partNumber).whenComplete((p, ex) -> {
-                if (ex == null) {
-                    parts.add(p);
-                    if (success.incrementAndGet() >= quorum) {
-                        result.complete(new ArrayList<>(parts));
-                    }
-                }
-            });
-        }
-        return result;
-    }
-
-    // 6. doCompleteMultipartUpload: 多份写，N份成功
-    public CompletableFuture<Void> doCompleteMultipartUpload(WriteOptions options, String path, List<String> uploadIds, List<AbstractObjectStorage.ObjectStorageCompletedPart> parts) {
-        AtomicInteger success = new AtomicInteger(0);
-        CompletableFuture<Void> result = new CompletableFuture<>();
-        for (int i = 0; i < storages.size(); i++) {
-            storages.get(i).doCompleteMultipartUpload(options, path, uploadIds.get(i), parts).whenComplete((v, ex) -> {
-                if (ex == null && success.incrementAndGet() >= quorum) {
-                    result.complete(null);
-                }
-            });
-        }
-        return result;
-    }
-
     // 7. doDeleteObjects: 多份写，N份成功
     public CompletableFuture<Void> doDeleteObjects(List<String> objectKeys) {
         AtomicInteger success = new AtomicInteger(0);
@@ -207,12 +124,6 @@ public class QuorumAwsObjectStorage implements ObjectStorage {
             }
         });
     }
-
-    // 9. toRetryStrategyAndCause: 直接代理第一个storage
-    public Pair<RetryStrategy, Throwable> toRetryStrategyAndCause(Throwable ex, S3Operation operation) {
-        return storages.get(0).toRetryStrategyAndCause(ex, operation);
-    }
-
     // 兼容ObjectStorage接口的核心方法
     @Override
     public Writer writer(WriteOptions options, String objectPath) {
