@@ -134,6 +134,9 @@ public class NodeControlManager {
             try {
                 int nodeId = Integer.parseInt(kv.key().substring(KEY_PREFIX.length()));
                 NodeMetadata nodeMetadata = NodeMetadataCodec.decode(kv.value());
+                String walConfig = "0@s3://automq-data?region=us-east-1&endpoint=http://10.65.172.99:9002";
+                LOGGER.info("set wal config:"+walConfig);
+                nodeMetadata.setWalConfig(walConfig);
                 nodeMetadataMap.put(nodeId, nodeMetadata);
                 if ("CLOSED".equals(nodeMetadata.getTags().getOrDefault("CIRCUIT_BREAKER", "CLOSED"))) {
                     nodeRuntimeInfoManager.unlock(nodeId);
