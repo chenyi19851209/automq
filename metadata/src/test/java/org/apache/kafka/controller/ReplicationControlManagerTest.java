@@ -17,6 +17,7 @@
 
 package org.apache.kafka.controller;
 
+import org.apache.kafka.clients.admin.AlterConfigOp;
 import org.apache.kafka.common.DirectoryId;
 import org.apache.kafka.common.ElectionType;
 import org.apache.kafka.common.TopicPartition;
@@ -83,6 +84,7 @@ import org.apache.kafka.metadata.AssignmentsHelper;
 import org.apache.kafka.metadata.BrokerHeartbeatReply;
 import org.apache.kafka.metadata.BrokerRegistration;
 import org.apache.kafka.metadata.BrokerRegistrationInControlledShutdownChange;
+import org.apache.kafka.metadata.FakeKafkaConfigSchema;
 import org.apache.kafka.metadata.LeaderRecoveryState;
 import org.apache.kafka.metadata.PartitionRegistration;
 import org.apache.kafka.metadata.RecordTestUtils;
@@ -104,6 +106,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -120,6 +123,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
 import static java.util.Arrays.asList;
 import static java.util.Collections.singletonList;
@@ -171,6 +175,7 @@ public class ReplicationControlManagerTest {
             private MetadataVersion metadataVersion = MetadataVersion.latestTesting();
             private MockTime mockTime = new MockTime();
             private boolean isElrEnabled = false;
+            private final Map<String, Object> staticConfig = new HashMap<>();
 
             Builder setCreateTopicPolicy(CreateTopicPolicy createTopicPolicy) {
                 this.createTopicPolicy = Optional.of(createTopicPolicy);
@@ -187,6 +192,11 @@ public class ReplicationControlManagerTest {
                 return this;
             }
 
+            Builder setStaticConfig(String key, Object value) {
+                this.staticConfig.put(key, value);
+                return this;
+            }
+
             Builder setMockTime(MockTime mockTime) {
                 this.mockTime = mockTime;
                 return this;
@@ -196,14 +206,8 @@ public class ReplicationControlManagerTest {
                 return new ReplicationControlTestContext(metadataVersion,
                     createTopicPolicy,
                     mockTime,
-                    isElrEnabled);
-            }
-
-            ReplicationControlTestContext build(MetadataVersion metadataVersion) {
-                return new ReplicationControlTestContext(metadataVersion,
-                    createTopicPolicy,
-                    mockTime,
-                    isElrEnabled);
+                    isElrEnabled,
+                    staticConfig);
             }
         }
 
@@ -213,9 +217,7 @@ public class ReplicationControlManagerTest {
         final MockRandom random = new MockRandom();
         final FeatureControlManager featureControl;
         final ClusterControlManager clusterControl;
-        final ConfigurationControlManager configurationControl = new ConfigurationControlManager.Builder().
-            setSnapshotRegistry(snapshotRegistry).
-            build();
+        final ConfigurationControlManager configurationControl;
         final ReplicationControlManager replicationControl;
 
         void replay(List<ApiMessageAndVersion> records) {
@@ -228,9 +230,15 @@ public class ReplicationControlManagerTest {
             MetadataVersion metadataVersion,
             Optional<CreateTopicPolicy> createTopicPolicy,
             MockTime time,
-            Boolean isElrEnabled
+            boolean isElrEnabled,
+            Map<String, Object> staticConfig
         ) {
             this.time = time;
+            this.configurationControl = new ConfigurationControlManager.Builder().
+                setSnapshotRegistry(snapshotRegistry).
+                setStaticConfig(staticConfig).
+                setKafkaConfigSchema(FakeKafkaConfigSchema.INSTANCE).
+                build();
             this.featureControl = new FeatureControlManager.Builder().
                 setSnapshotRegistry(snapshotRegistry).
                 setQuorumFeatures(new QuorumFeatures(0,
@@ -483,6 +491,10 @@ public class ReplicationControlManagerTest {
             replay(singletonList(new ApiMessageAndVersion(configRecord, (short) 0)));
         }
 
+        void fenceBrokers(Integer... brokerIds) {
+            fenceBrokers(Utils.mkSet(brokerIds));
+        }
+
         void fenceBrokers(Set<Integer> brokerIds) {
             time.sleep(BROKER_SESSION_TIMEOUT_MS);
 
@@ -524,6 +536,11 @@ public class ReplicationControlManagerTest {
         }
     }
 
+    static CreateTopicsResponseData withoutConfigs(CreateTopicsResponseData data) {
+        data.topics().forEach(t -> t.configs().clear());
+        return data;
+    }
+
     private static class MockCreateTopicPolicy implements CreateTopicPolicy {
         private final List<RequestMetadata> expecteds;
         private final AtomicLong index = new AtomicLong(0);
@@ -555,6 +572,44 @@ public class ReplicationControlManagerTest {
         public void configure(Map<String, ?> configs) {
             // nothing to do
         }
+    }
+
+    @Test
+    public void testExcessiveNumberOfTopicsCannotBeCreated() {
+        // number of partitions is explicitly set without assignments
+        ReplicationControlTestContext ctx = new ReplicationControlTestContext.Builder().build();
+        ReplicationControlManager replicationControl = ctx.replicationControl;
+        CreateTopicsRequestData request = new CreateTopicsRequestData();
+        request.topics().add(new CreatableTopic().setName("foo").
+                setNumPartitions(5000).setReplicationFactor((short) 1));
+        request.topics().add(new CreatableTopic().setName("bar").
+                setNumPartitions(5000).setReplicationFactor((short) 1));
+        request.topics().add(new CreatableTopic().setName("baz").
+                setNumPartitions(1).setReplicationFactor((short) 1));
+        ControllerRequestContext requestContext = anonymousContextFor(ApiKeys.CREATE_TOPICS);
+        PolicyViolationException error = assertThrows(
+                PolicyViolationException.class,
+                () -> replicationControl.createTopics(requestContext, request, Stream.of("foo", "bar", "baz").collect(Collectors.toSet())));
+        assertEquals(error.getMessage(), "Excessively large number of partitions per request.");
+    }
+
+    @Test
+    public void testExcessiveNumberOfTopicsCannotBeCreatedWithAssignments() {
+        CreateTopicsRequestData request = new CreateTopicsRequestData();
+        request.topics().add(new CreatableTopic().setName("foo").
+                setNumPartitions(-1).setReplicationFactor((short) 1));
+        CreateTopicsRequestData.CreatableReplicaAssignmentCollection assignments =
+                new CreateTopicsRequestData.CreatableReplicaAssignmentCollection();
+        assignments.add(new CreatableReplicaAssignment().setPartitionIndex(1));
+        assignments.add(new CreatableReplicaAssignment().setPartitionIndex(2));
+        request.topics().add(new CreatableTopic()
+                .setName("baz")
+                .setAssignments(assignments));
+        PolicyViolationException error = assertThrows(
+                PolicyViolationException.class,
+                () -> ReplicationControlManager.validateTotalNumberOfPartitions(request, 9999)
+        );
+        assertEquals(error.getMessage(), "Excessively large number of partitions per request.");
     }
 
     @Test
@@ -598,7 +653,7 @@ public class ReplicationControlManagerTest {
             setNumPartitions(1).setReplicationFactor((short) 3).
             setErrorMessage(null).setErrorCode((short) 0).
             setTopicId(result3.response().topics().find("foo").topicId()));
-        assertEquals(expectedResponse3, result3.response());
+        assertEquals(expectedResponse3, withoutConfigs(result3.response()));
         ctx.replay(result3.records());
         assertEquals(new PartitionRegistration.Builder().setReplicas(new int[] {1, 2, 0}).
             setDirectories(new Uuid[] {
@@ -660,6 +715,9 @@ public class ReplicationControlManagerTest {
             setNumPartitions(1).setReplicationFactor((short) 3).
             setErrorMessage(null).setErrorCode((short) 0).
             setTopicId(result.response().topics().find("foo").topicId()));
+        for (CreatableTopicResult topic : result.response().topics()) {
+            topic.configs().clear();
+        }
         assertEquals(expectedResponse, result.response());
 
         ctx.replay(result.records());
@@ -1380,7 +1438,7 @@ public class ReplicationControlManagerTest {
             setNumPartitions(3).setReplicationFactor((short) 2).
             setErrorMessage(null).setErrorCode((short) 0).
             setTopicId(topicId));
-        assertEquals(expectedResponse, createResult.response());
+        assertEquals(expectedResponse, withoutConfigs(createResult.response()));
         // Until the records are replayed, no changes are made
         assertNull(replicationControl.getPartition(topicId, 0));
         assertEmptyTopicConfigs(ctx, "foo");
@@ -2245,7 +2303,9 @@ public class ReplicationControlManagerTest {
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
     public void testElectUncleanLeaders_WithoutElr(boolean electAllPartitions) {
-        ReplicationControlTestContext ctx = new ReplicationControlTestContext.Builder().build(MetadataVersion.IBP_3_6_IV1);
+        ReplicationControlTestContext ctx = new ReplicationControlTestContext.Builder().
+            setMetadataVersion(MetadataVersion.IBP_3_6_IV1).
+            build();
         ReplicationControlManager replication = ctx.replicationControl;
         ctx.registerBrokers(0, 1, 2, 3, 4);
         ctx.unfenceBrokers(0, 1, 2, 3, 4);
@@ -2606,6 +2666,85 @@ public class ReplicationControlManagerTest {
         assertEquals(singletonList(new ApiMessageAndVersion(expectedChangeRecord, MetadataVersion.latestTesting().partitionChangeRecordVersion())), balanceResult.records());
         assertFalse(replication.arePartitionLeadersImbalanced());
         assertFalse(balanceResult.response());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"none", "static", "dynamic_cluster", "dynamic_node", "dynamic_topic"})
+    public void testMaybeTriggerUncleanLeaderElectionForLeaderlessPartitions(String uncleanConfig) {
+        ReplicationControlTestContext.Builder ctxBuilder = new ReplicationControlTestContext.Builder();
+        if (uncleanConfig.equals("static")) {
+            ctxBuilder.setStaticConfig(TopicConfig.UNCLEAN_LEADER_ELECTION_ENABLE_CONFIG, "true");
+        }
+        ReplicationControlTestContext ctx = ctxBuilder.build();
+        ReplicationControlManager replication = ctx.replicationControl;
+        ctx.registerBrokers(0, 1, 2, 3, 4);
+        ctx.unfenceBrokers(0, 1, 2, 3, 4);
+        Uuid fooId = ctx.createTestTopic("foo", new int[][]{
+            new int[]{1, 2, 4}, new int[]{1, 3, 4}, new int[]{0, 2, 4}}).topicId();
+        assertFalse(replication.areSomePartitionsLeaderless());
+        ctx.fenceBrokers(0, 1, 2, 3, 4);
+        assertTrue(replication.areSomePartitionsLeaderless());
+        for (int partitionId : Arrays.asList(0, 1, 2)) {
+            assertArrayEquals(new int[] {4}, ctx.replicationControl.getPartition(fooId, partitionId).isr);
+            assertEquals(-1, ctx.replicationControl.getPartition(fooId, partitionId).leader);
+        }
+
+        // Unfence broker 2. It is now available to be the leader for partition 0 and 2, after
+        // an unclean election.
+        ctx.unfenceBrokers(2);
+
+        if (uncleanConfig.equals("static")) {
+            // If we statically configured unclean leader election, the election already happened.
+            assertArrayEquals(new int[] {2}, ctx.replicationControl.getPartition(fooId, 0).isr);
+            assertEquals(2, ctx.replicationControl.getPartition(fooId, 0).leader);
+            assertArrayEquals(new int[] {4}, ctx.replicationControl.getPartition(fooId, 1).isr);
+            assertEquals(-1, ctx.replicationControl.getPartition(fooId, 1).leader);
+            assertArrayEquals(new int[] {2}, ctx.replicationControl.getPartition(fooId, 2).isr);
+            assertEquals(2, ctx.replicationControl.getPartition(fooId, 2).leader);
+        } else {
+            // Otherwise, check that the election did NOT happen.
+            for (int partitionId : Arrays.asList(0, 1, 2)) {
+                assertArrayEquals(new int[] {4}, ctx.replicationControl.getPartition(fooId, partitionId).isr);
+                assertEquals(-1, ctx.replicationControl.getPartition(fooId, partitionId).leader);
+            }
+        }
+
+        // If we're setting unclean leader election dynamically, do that here.
+        if (uncleanConfig.equals("dynamic_cluster")) {
+            ctx.replay(ctx.configurationControl.incrementalAlterConfigs(
+                Collections.singletonMap(new ConfigResource(ConfigResource.Type.BROKER, ""),
+                    Collections.singletonMap(TopicConfig.UNCLEAN_LEADER_ELECTION_ENABLE_CONFIG,
+                        new AbstractMap.SimpleImmutableEntry<>(AlterConfigOp.OpType.SET, "true"))),
+                true).records());
+        } else if (uncleanConfig.equals("dynamic_node")) {
+            ctx.replay(ctx.configurationControl.incrementalAlterConfigs(
+                Collections.singletonMap(new ConfigResource(ConfigResource.Type.BROKER, "0"),
+                    Collections.singletonMap(TopicConfig.UNCLEAN_LEADER_ELECTION_ENABLE_CONFIG,
+                        new AbstractMap.SimpleImmutableEntry<>(AlterConfigOp.OpType.SET, "true"))),
+                true).records());
+        } else if (uncleanConfig.equals("dynamic_topic")) {
+            ctx.replay(ctx.configurationControl.incrementalAlterConfigs(
+                Collections.singletonMap(new ConfigResource(ConfigResource.Type.TOPIC, "foo"),
+                    Collections.singletonMap(TopicConfig.UNCLEAN_LEADER_ELECTION_ENABLE_CONFIG,
+                        new AbstractMap.SimpleImmutableEntry<>(AlterConfigOp.OpType.SET, "true"))),
+                true).records());
+        }
+        ControllerResult<Boolean> balanceResult = replication.maybeElectUncleanLeaders();
+        assertFalse(balanceResult.response());
+        if (uncleanConfig.equals("none") || uncleanConfig.equals("static")) {
+            assertEquals(0, balanceResult.records().size(), "Expected no records, but " +
+                balanceResult.records().size() + " were found.");
+        } else {
+            assertNotEquals(0, balanceResult.records().size(), "Expected some records, but " +
+                "none were found.");
+            ctx.replay(balanceResult.records());
+            assertArrayEquals(new int[] {2}, ctx.replicationControl.getPartition(fooId, 0).isr);
+            assertEquals(2, ctx.replicationControl.getPartition(fooId, 0).leader);
+            assertArrayEquals(new int[] {4}, ctx.replicationControl.getPartition(fooId, 1).isr);
+            assertEquals(-1, ctx.replicationControl.getPartition(fooId, 1).leader);
+            assertArrayEquals(new int[] {2}, ctx.replicationControl.getPartition(fooId, 2).isr);
+            assertEquals(2, ctx.replicationControl.getPartition(fooId, 2).leader);
+        }
     }
 
     private void assertElectLeadersResponse(

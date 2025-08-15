@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# AutoMQ Cluster setup with MinIO for quick starts
+# Single-node AutoMQ setup with MinIO for quick starts
 version: "3.8"
 
 x-common-variables: &common-env
@@ -68,7 +68,7 @@ services:
   # Three nodes for AutoMQ cluster
   server1:
     container_name: "automq-server1"
-    image: automqinc/automq:1.6.0
+    image: automqinc/automq:1.5.4
     stop_grace_period: 1m
     environment:
       <<: *common-env
@@ -94,7 +94,7 @@ services:
 
   server2:
     container_name: "automq-server2"
-    image: automqinc/automq:1.6.0
+    image: automqinc/automq:1.5.4
     stop_grace_period: 1m
     environment:
       <<: *common-env
@@ -120,7 +120,7 @@ services:
 
   server3:
     container_name: "automq-server3"
-    image: automqinc/automq:1.6.0
+    image: automqinc/automq:1.5.4
     stop_grace_period: 1m
     environment:
       <<: *common-env

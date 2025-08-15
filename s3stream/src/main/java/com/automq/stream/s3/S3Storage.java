@@ -470,7 +470,15 @@ public class S3Storage implements Storage {
             request.cf.completeExceptionally(new IOException("S3Storage is shutdown"));
         }
         deltaWAL.shutdownGracefully();
-        ThreadUtils.shutdownExecutor(backgroundExecutor, 10, TimeUnit.SECONDS, LOGGER);
+        backgroundExecutor.shutdown();
+        try {
+            if (!backgroundExecutor.awaitTermination(10, TimeUnit.SECONDS)) {
+                LOGGER.warn("await backgroundExecutor timeout 10s");
+            }
+        } catch (InterruptedException e) {
+            backgroundExecutor.shutdownNow();
+            LOGGER.warn("await backgroundExecutor close fail", e);
+        }
     }
 
     @Override

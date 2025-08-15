@@ -72,6 +72,7 @@ import com.automq.stream.utils.threads.S3StreamThreadPoolMonitor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -145,7 +146,7 @@ public class DefaultS3Client implements Client {
             config.networkBaselineBandwidth() - (long) networkOutboundRate.derive(
                 TimeUnit.NANOSECONDS.toSeconds(System.nanoTime()), NetworkStats.getInstance().networkOutboundUsageTotal().get()));
 
-        this.localIndexCache = LocalStreamRangeIndexCache.create();
+        this.localIndexCache = new LocalStreamRangeIndexCache();
         this.objectReaderFactory = new DefaultObjectReaderFactory(() -> this.mainObjectStorage);
         this.metadataManager = new StreamMetadataManager(brokerServer, config.nodeId(), objectReaderFactory, localIndexCache);
         this.requestSender = new ControllerRequestSender(brokerServer, new ControllerRequestSender.RetryPolicyContext(config.controllerRequestRetryMaxCount(),
@@ -272,7 +273,8 @@ public class DefaultS3Client implements Client {
                 long nodeEpoch = request.getNodeEpoch();
                 WalHandle walHandle = new DefaultWalHandle(clusterId);
                 WalFactory factory = new DefaultWalFactory(nodeId, config.objectTagging(), networkInboundLimiter, networkOutboundLimiter);
-                return new BootstrapWalV1(nodeId, nodeEpoch, request.getKraftWalConfigs(), true, factory, getNodeManager(), walHandle);
+                NodeManager nodeManager = new NodeManagerStub(requestSender, nodeId, nodeEpoch, Collections.emptyMap());
+                return new BootstrapWalV1(nodeId, nodeEpoch, request.getKraftWalConfigs(), true, factory, nodeManager, walHandle);
             }
         }, (wal, sm, om, logger) -> {
             try {

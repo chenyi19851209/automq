@@ -71,13 +71,10 @@ public class PerfConfig {
     public final int backlogDurationSeconds;
     public final int groupStartDelaySeconds;
     public final int warmupDurationMinutes;
-    public final int consumersDuringCatchupPercentage;
     public final int testDurationMinutes;
     public final int reportingIntervalSeconds;
     public final String valueSchema;
     public final String valuesFile;
-    public final boolean reuseTopics; // Added for --reuse-topics
-    public final String catchupTopicPrefix; // Added for --catchup-topic-prefix
 
     public PerfConfig(String[] args) {
         ArgumentParser parser = parser();
@@ -121,9 +118,6 @@ public class PerfConfig {
         reportingIntervalSeconds = ns.getInt("reportingIntervalSeconds");
         valueSchema = ns.getString("valueSchema");
         valuesFile = ns.get("valuesFile");
-        reuseTopics = ns.getBoolean("reuseTopics"); // Added for --reuse-topics
-        catchupTopicPrefix = ns.getString("catchupTopicPrefix"); // Added for --catchup-topic-prefix
-        consumersDuringCatchupPercentage = ns.getInt("consumersDuringCatchupPercentage");
 
         if (backlogDurationSeconds < groupsPerTopic * groupStartDelaySeconds) {
             throw new IllegalArgumentException(String.format("BACKLOG_DURATION_SECONDS(%d) should not be less than GROUPS_PER_TOPIC(%d) * GROUP_START_DELAY_SECONDS(%d)",
@@ -136,35 +130,12 @@ public class PerfConfig {
             .newArgumentParser("performance-test")
             .defaultHelp(true)
             .description("This tool is used to run performance tests.");
-
-        addConnectionArguments(parser);
-        addTopicArguments(parser);
-        addConsumerArguments(parser);
-        addProducerArguments(parser);
-        addTestConfigArguments(parser);
-        return parser;
-    }
-
-    private static void addConnectionArguments(ArgumentParser parser) {
         parser.addArgument("-B", "--bootstrap-server")
             .setDefault("localhost:9092")
             .type(String.class)
             .dest("bootstrapServer")
             .metavar("BOOTSTRAP_SERVER")
             .help("The AutoMQ bootstrap server.");
-
-        parser.addArgument("--reuse-topics")
-            .action(storeTrue())
-            .dest("reuseTopics")
-            .help("Reuse existing topics with the given prefix instead of creating new ones.");
-
-        // Add the new parameter
-        parser.addArgument("--catchup-topic-prefix")
-            .type(String.class)
-            .dest("catchupTopicPrefix")
-            .metavar("CATCHUP_TOPIC_PREFIX")
-            .help("The topic prefix for catch-up read testing. Reuses existing topics with this prefix and skips message accumulation phase.");
-
         parser.addArgument("-F", "--common-config-file")
             .type(String.class)
             .dest("commonConfigFile")
@@ -192,9 +163,6 @@ public class PerfConfig {
             .action(storeTrue())
             .dest("reset")
             .help("delete all topics before running the test.");
-    }
-
-    private static void addTopicArguments(ArgumentParser parser) {
         parser.addArgument("-X", "--topic-prefix")
             .type(String.class)
             .dest("topicPrefix")
@@ -212,9 +180,12 @@ public class PerfConfig {
             .dest("partitionsPerTopic")
             .metavar("PARTITIONS_PER_TOPIC")
             .help("The number of partitions per topic.");
-    }
-
-    private static void addConsumerArguments(ArgumentParser parser) {
+        parser.addArgument("-p", "--producers-per-topic")
+            .setDefault(1)
+            .type(positiveInteger())
+            .dest("producersPerTopic")
+            .metavar("PRODUCERS_PER_TOPIC")
+            .help("The number of producers per topic.");
         parser.addArgument("-g", "--groups-per-topic")
             .setDefault(1)
             .type(nonNegativeInteger())
@@ -233,28 +204,6 @@ public class PerfConfig {
             .dest("awaitTopicReady")
             .metavar("AWAIT_TOPIC_READY")
             .help("Use produce / consume detect to check topic readiness.");
-        parser.addArgument("-m", "--max-consume-record-rate")
-            .setDefault(1_000_000_000)
-            .type(between(0, 1_000_000_000))
-            .dest("maxConsumeRecordRate")
-            .metavar("MAX_CONSUME_RECORD_RATE")
-            .help("The max rate of consuming records per second.");
-
-        parser.addArgument("--consumers-during-catchup")
-            .setDefault(100)
-            .type(between(0, 100))
-            .dest("consumersDuringCatchupPercentage")
-            .metavar("CONSUMERS_DURING_CATCHUP_PERCENTAGE")
-            .help("The percentage of consumers to activate during catch-up read (0-100). Default is 100 (all consumers).");
-    }
-
-    private static void addProducerArguments(ArgumentParser parser) {
-        parser.addArgument("-p", "--producers-per-topic")
-            .setDefault(1)
-            .type(positiveInteger())
-            .dest("producersPerTopic")
-            .metavar("PRODUCERS_PER_TOPIC")
-            .help("The number of producers per topic.");
         parser.addArgument("-s", "--record-size")
             .setDefault(1024)
             .type(positiveInteger())
@@ -289,9 +238,12 @@ public class PerfConfig {
             .dest("sendRateDuringCatchup")
             .metavar("SEND_RATE_DURING_CATCHUP")
             .help("The send rate in messages per second during catchup. If not set, the send rate will be used.");
-    }
-
-    private static void addTestConfigArguments(ArgumentParser parser) {
+        parser.addArgument("-m", "--max-consume-record-rate")
+            .setDefault(1_000_000_000)
+            .type(between(0, 1_000_000_000))
+            .dest("maxConsumeRecordRate")
+            .metavar("MAX_CONSUME_RECORD_RATE")
+            .help("The max rate of consuming records per second.");
         parser.addArgument("-b", "--backlog-duration")
             .setDefault(0)
             .type(notLessThan(300))
@@ -332,6 +284,7 @@ public class PerfConfig {
             .dest("valuesFile")
             .metavar("VALUES_FILE")
             .help("The avro value file. Example file content {\"f1\": \"value1\"}");
+        return parser;
     }
 
     public String bootstrapServer() {

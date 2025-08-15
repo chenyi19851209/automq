@@ -126,9 +126,7 @@ class BrokerQuotaManager(private val config: BrokerQuotaManagerConfig,
     } catch {
       case e: QuotaViolationException =>
         val throttleTimeMs = throttleTime(e, timeMs).toInt
-        if (isDebugEnabled) {
-          debug(s"Quota violated for sensor (${clientSensors.quotaSensor.name}). Delay time: ($throttleTimeMs)")
-        }
+        debug(s"Quota violated for sensor (${clientSensors.quotaSensor.name}). Delay time: ($throttleTimeMs)")
         throttleTimeMs
     }
   }
@@ -208,9 +206,7 @@ class BrokerQuotaManager(private val config: BrokerQuotaManagerConfig,
       val throttledChannel = new ThrottledChannel(time, throttleTimeMs, throttleCallback)
       delayQueue.add(throttledChannel)
       delayQueueSensor.record()
-      if (isDebugEnabled) {
-        debug("Channel throttled for sensor (%s). Delay time: (%d)".format(clientSensors.quotaSensor.name(), throttleTimeMs))
-      }
+      debug("Channel throttled for sensor (%s). Delay time: (%d)".format(clientSensors.quotaSensor.name(), throttleTimeMs))
     }
   }
 
