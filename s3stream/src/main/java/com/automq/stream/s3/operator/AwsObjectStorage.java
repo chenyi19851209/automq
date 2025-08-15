@@ -30,7 +30,9 @@ import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.InetAddress;
 import java.net.URI;
+import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -129,7 +131,9 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         }
         this.checksumAlgorithm = checksumAlgorithm;
 
-        Supplier<S3AsyncClient> clientSupplier = () -> newS3Client(bucketURI.endpoint(), bucketURI.region(), bucketURI.extensionBool(PATH_STYLE_KEY, false), credentialsProviders, getMaxObjectStorageConcurrency());
+        //在对接minIO时，这里pathStyle需要设置为true，才能正常通过域名访问MinIO集群
+        //避免出现访问minIO时会将域名和bucket拼接到一起访问
+        Supplier<S3AsyncClient> clientSupplier = () -> newS3Client(bucketURI.endpoint(), bucketURI.region(), bucketURI.extensionBool(PATH_STYLE_KEY, true), credentialsProviders, getMaxObjectStorageConcurrency());
         this.writeS3Client = clientSupplier.get();
         this.readS3Client = readWriteIsolate ? clientSupplier.get() : writeS3Client;
     }
@@ -415,6 +419,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     protected S3AsyncClient newS3Client(String endpoint, String region, boolean forcePathStyle,
         List<AwsCredentialsProvider> credentialsProviders, int maxConcurrency) {
         S3AsyncClientBuilder builder = S3AsyncClient.builder().region(Region.of(region));
+//        builder.forcePathStyle(true);
         if (StringUtils.isNotBlank(endpoint)) {
             builder.endpointOverride(URI.create(endpoint));
         }
@@ -454,6 +459,14 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
     class ReadinessCheck {
         public boolean readinessCheck() {
+
+//            InetAddress address = null; // 替换为你的域名
+//            try {
+//                address = InetAddress.getByName("ceph1.webank.com");
+//                System.out.println("解析结果：" + address.getHostAddress());
+//            } catch (UnknownHostException e) {
+//                throw new RuntimeException(e);
+//            }
             READINESS_CHECK_LOGGER.info("Start readiness check for {}", bucketURI);
             String normalPath = String.format("__automq/readiness_check/normal_obj/%d", System.nanoTime());
             try {
