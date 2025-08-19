@@ -230,7 +230,6 @@ public class RouterOut {
             // Orderly send the router request.
             .thenCompose(nil -> prevLastRouterCf)
             .thenAccept(nil -> {
-                // TODO: in / out metrics and type (要经过限流器 + 另外一个 type 类型统计)
                 List<CompletableFuture<Void>> sendCfList = new ArrayList<>();
                 node2position.forEach((destNode, position) -> {
                     List<ProxyRequest> proxyRequests = node2requests.get(destNode);

@@ -65,9 +65,6 @@ public class RegistrySchemaAvroConverter implements Converter {
                 RestClientException restClientException = (RestClientException) cause;
                 if (restClientException.getStatus() == HttpStatusCode.NOT_FOUND
                     // https://docs.confluent.io/platform/current/schema-registry/develop/api.html
-                    // Error code 40401 – Subject not found
-                    // Error code 40402 – Version not found
-                    // Error code 40403 – Schema not found
                     || restClientException.getStatus() / 100 == HttpStatusCode.NOT_FOUND) {
                     throw new InvalidDataException(ex);
                 }

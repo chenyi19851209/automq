@@ -415,19 +415,19 @@ public class LogConfig extends AbstractConfig {
     public final String kafkaLinksTopicState;
     // AutoMQ inject end
 
-    // AutoMQ inject start
-    public final boolean tableTopicEnable;
-    public final long tableTopicCommitInterval;
-    public final String tableTopicNamespace;
-    public final TableTopicSchemaType tableTopicSchemaType;
-    public final String tableTopicIdColumns;
-    public final String tableTopicPartitionBy;
-    public final boolean tableTopicUpsertEnable;
-    public final String tableTopicCdcField;
-
-    public final String kafkaLinksId;
-    public final long kafkaLinksTopicStartTime;
-    public final String kafkaLinksTopicState;
+//    // AutoMQ inject start
+//    public final boolean tableTopicEnable;
+//    public final long tableTopicCommitInterval;
+//    public final String tableTopicNamespace;
+//    public final TableTopicSchemaType tableTopicSchemaType;
+//    public final String tableTopicIdColumns;
+//    public final String tableTopicPartitionBy;
+//    public final boolean tableTopicUpsertEnable;
+//    public final String tableTopicCdcField;
+//
+//    public final String kafkaLinksId;
+//    public final long kafkaLinksTopicStartTime;
+//    public final String kafkaLinksTopicState;
     // AutoMQ inject end
 
     private final int maxMessageSize;
